@@ -1,0 +1,63 @@
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ordermanagement-api
+  namespace: ordermanagement
+
+spec:
+  replicas: 1
+
+  selector:
+    matchLabels:
+      app: ordermanagement-api
+
+  template:
+    metadata:
+      labels:
+        app: ordermanagement-api
+
+    spec:
+      containers:
+        - name: ordermanagement-api
+
+          image: YOUR_DOCKERHUB_USERNAME/ordermanagement-api:1.0
+
+          imagePullPolicy: IfNotPresent
+
+          ports:
+            - containerPort: 8080
+              name: http
+
+          envFrom:
+            - configMapRef:
+                name: ordermanagement-config
+
+          volumeMounts:
+            - name: sqlite-storage
+              mountPath: /app/data
+
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+
+          readinessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+
+          livenessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 20
+            periodSeconds: 20
+
+      volumes:
+        - name: sqlite-storage
+          persistentVolumeClaim:
+            claimName: ordermanagement-pvc

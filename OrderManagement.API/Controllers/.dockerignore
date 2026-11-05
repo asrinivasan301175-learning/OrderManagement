@@ -1,0 +1,16 @@
+
+**/bin/
+**/obj/
+**/.vs/
+**/.vscode/
+.git/
+.gitignore
+.vs/
+TestResults/
+*.user
+*.suo
+*.db
+*.db-shm
+*.db-wal
+Dockerfile*
+docker-compose*

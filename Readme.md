@@ -1,87 +1,134 @@
 # Order Management
 
-Order Management is a .NET solution designed to provide a clean foundation for managing order-related workflows, business rules, and API interactions.
-
-## Overview
-
-This repository is structured around a layered architecture to separate concerns and keep business logic maintainable:
-
-- `OrderManagement.API` – ASP.NET Core web API entry point
-- `OrderManagement.Application` – application services and use cases
-- `OrderManagement.Domain` – domain models, value objects, and business rules
-- `OrderManagement.Infrastructure` – data access and external service implementations
-
-## Tech Stack
-
-- .NET 10
-- ASP.NET Core
-- C#
+Order Management is a .NET 10 ASP.NET Core API starter organized into API, application, domain, and infrastructure layers.
 
 ## Prerequisites
 
-Before running the project, make sure you have the following installed:
+- .NET 10 SDK (for local development)
+- Docker Engine or Docker Desktop (for container builds and runs)
+- For Kubernetes: `kubectl` configured for a cluster, a container registry account, a cluster StorageClass that can provision persistent volumes, and an NGINX Ingress Controller if you want to use the included Ingress
 
-- .NET 10 SDK
-- An IDE such as Visual Studio 2022 or VS Code
+## Run locally with .NET
 
-## Getting Started
+From the repository root:
 
-1. Clone the repository
-2. Open the solution in your preferred IDE or terminal
-3. Restore NuGet packages:
-
-```bash
-dotnet restore
+```powershell
+dotnet restore .\OrderManagement.slnx
+dotnet build .\OrderManagement.slnx
+dotnet run --project .\OrderManagement.API\OrderManagement.API.csproj
 ```
 
-4. Build the solution:
+The API uses the configured ASP.NET Core development URL. Swagger is enabled only in the Development environment.
 
-```bash
-dotnet build
+## Build and run with Docker
+
+Run these commands from the repository root. The build context must be the repository root because the Dockerfile builds the whole solution.
+
+```powershell
+docker build -f .\OrderManagement.API\Controllers\dockerfile -t ordermanagement-api:1.0 .
+docker run --detach --name ordermanagement-api -p 8080:8080 `
+  --mount source=ordermanagement-data,target=/app/data `
+  -e "ConnectionStrings__DefaultConnection=Data Source=/app/data/orders.db" `
+  ordermanagement-api:1.0
 ```
 
-5. Run the API project:
+The named Docker volume keeps the SQLite database when the container is stopped or replaced. View logs and stop/remove the container with:
 
-```bash
-dotnet run --project OrderManagement.API
+```powershell
+docker logs --follow ordermanagement-api
+docker stop ordermanagement-api
+docker rm ordermanagement-api
 ```
 
-The API will start using the configured ASP.NET Core defaults and can be accessed via the local development endpoint.
+The API listens on port `8080` in the container; the commands above expose it at `http://localhost:8080`.
 
-## Project Structure
+## Deploy to Kubernetes
+
+The manifests are in `OrderManagement.API/Controllers/K8s`. The commands below use PowerShell and assume `kubectl` is pointed at the intended cluster. The cluster must be able to pull the image from Docker Hub and provision the included 1 GiB PersistentVolumeClaim.
+
+### Build and push the image
+
+Set your Docker Hub username, then build, authenticate, tag, and push the image:
+
+```powershell
+$env:DOCKERHUB_USERNAME = "your-dockerhub-username"
+docker build -f .\OrderManagement.API\Controllers\dockerfile -t ordermanagement-api:1.0 .
+docker login
+docker tag ordermanagement-api:1.0 "$env:DOCKERHUB_USERNAME/ordermanagement-api:1.0"
+docker push "$env:DOCKERHUB_USERNAME/ordermanagement-api:1.0"
+```
+
+### Apply the manifests
+
+Apply the namespace before its namespaced resources. Update the image in `deployment.yaml` to the pushed image name, replacing `YOUR_DOCKERHUB_USERNAME` with your Docker Hub username. If using the Ingress, also change `orders.example.com` in `ingress.yaml` to a hostname that resolves to the cluster's ingress endpoint.
+
+```powershell
+kubectl apply -f .\OrderManagement.API\Controllers\K8s\namespace.yaml
+kubectl apply -f .\OrderManagement.API\Controllers\K8s\configmap.yaml
+kubectl apply -f .\OrderManagement.API\Controllers\K8s\persistent-volume-claim.yaml
+kubectl apply -f .\OrderManagement.API\Controllers\K8s\deployment.yaml
+kubectl apply -f .\OrderManagement.API\Controllers\K8s\service.yaml
+kubectl apply -f .\OrderManagement.API\Controllers\K8s\ingress.yaml
+```
+
+The Ingress requires an NGINX Ingress Controller installed in the cluster. If you don't have one, skip applying `ingress.yaml` and use port forwarding to reach the API.
+
+### Check and access the deployment
+
+```powershell
+kubectl get all,pvc,ingress -n ordermanagement
+kubectl rollout status deployment/ordermanagement-api -n ordermanagement
+kubectl logs -f deployment/ordermanagement-api -n ordermanagement
+```
+
+To access the API locally without an Ingress, run this in a separate terminal and use `http://localhost:8080`:
+
+```powershell
+kubectl port-forward service/ordermanagement-service 8080:80 -n ordermanagement
+```
+
+When using the Ingress, configure DNS (or a local hosts-file entry) for the hostname you set in `ingress.yaml` to point to the cluster's ingress endpoint.
+
+### Remove the Kubernetes deployment
+
+This deletes the namespace and its resources, including the claim to the SQLite volume:
+
+```powershell
+kubectl delete namespace ordermanagement
+```
+
+## Architecture
+
+```mermaid
+flowchart LR
+    Dev[Developer] -->|docker build| Image[Order Management API image]
+    Image -->|docker push| Registry[Container registry]
+    Registry -->|pull image| Pod
+    Client[API client] --> Ingress[NGINX Ingress]
+    Ingress --> Service[Kubernetes Service]
+    Service --> Pod[API Pod]
+    Config[ConfigMap] -. environment settings .-> Pod
+    Pod -->|SQLite orders.db| PVC[PersistentVolumeClaim]
+    PVC --> PV[Persistent storage]
+```
+
+Within the API pod, requests pass through the API, application, domain, and infrastructure layers. The ConfigMap supplies the production environment and SQLite connection string; the PersistentVolumeClaim retains the database file independently of the pod.
+
+## Project structure
 
 ```text
 OrderManagement/
 ├── OrderManagement.API/
+│   └── Controllers/
+│       ├── K8s/
+│       └── dockerfile
 ├── OrderManagement.Application/
 ├── OrderManagement.Domain/
 ├── OrderManagement.Infrastructure/
 ├── OrderManagement.slnx
-├── Readme.md
-└── .gitignore
+├── .dockerignore
+└── Readme.md
 ```
-
-## Workflow Diagram
-
-```mermaid
-flowchart LR
-    A[Client / UI] --> B[OrderManagement.API]
-    B --> C[Application Layer]
-    C --> D[Domain Layer]
-    C --> E[Infrastructure Layer]
-    D --> F[Business Rules / Value Objects]
-    E --> G[Database / External Services]
-    G --> E
-    E --> C
-    C --> B
-    B --> A
-```
-
-This diagram shows the flow of an order request from the client through the API, into the application layer, where business logic is orchestrated, then into the domain for rules and validation, and finally to infrastructure for persistence or external integration.
-
-## Notes
-
-This project currently provides the application foundation and starter structure. You can extend the domain model, add service-layer logic, and implement order workflows as the system evolves.
 
 ## License
 
