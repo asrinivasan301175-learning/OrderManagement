@@ -9,3 +9,8 @@ TestResults/
 *.db
 *.db-shm
 *.db-wal
+.gitignore
+.vs/
+TestResults/
+Dockerfile*
+docker-compose*
