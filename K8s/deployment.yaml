@@ -21,7 +21,7 @@ spec:
       containers:
         - name: ordermanagement-api
 
-          image: YOUR_DOCKERHUB_USERNAME/ordermanagement-api:1.0
+          image: sriash74/ordermanagement-api:1.0
 
           imagePullPolicy: IfNotPresent
 
